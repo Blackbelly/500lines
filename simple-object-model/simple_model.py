@@ -1,4 +1,6 @@
 
+MISSING = object()
+
 
 class Base(object):
     """
@@ -17,7 +19,13 @@ class Base(object):
         self._write_dict(key, value)
 
     def read_attr(self, key):
-        return self._read_dict(key)
+        attr = self._read_dict(key)
+        if attr is not MISSING:
+            return attr
+        method = self.cls._read_from_class(key)
+        if _is_bindable(method):
+            return make_boundmethod(method, self)
+        raise AttributeError(key)
 
     def _write_dict(self, key, value):
         self._fields[key] = value
@@ -28,8 +36,9 @@ class Base(object):
     def isinstance(self, cls):
         return self.cls.issubclass(cls)
 
-
-MISSING = object()
+    def call_method(self, methname, *args, **kwargs):
+        method = self.cls._read_from_class(methname)
+        return method(*args, **kwargs)
 
 
 class Instance(Base):
@@ -55,6 +64,22 @@ class Class(Base):
     def issubclass(self, cls):
         return cls in self.method_resolution_order()
 
+    def _read_from_class(self, methname):
+        for cls in self.method_resolution_order():
+            if methname in cls._fields:
+                return cls._fields[methname]
+        return MISSING
+
+
+def _is_bindable(method):
+    return callable(method)
+
+
+def make_boundmethod(method, self):
+    def bound(*args, **kwargs):
+        return method(self, *args, **kwargs)
+    return bound
+
 
 # 创建 object 类, 相当于 class object:
 OBJECT = Class(name='object', base_class=None, fields={}, meta_class=None)
@@ -67,3 +92,6 @@ TYPE.cls = TYPE
 
 # OBJECT 是 TYPE 的实例
 OBJECT.cls = TYPE
+
+
+
